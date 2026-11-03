@@ -21,14 +21,44 @@ learn.model.eval()
 WINDOW_SIZE = 120
 CUTOFF_40 = 48
 
-# 2. Pick a random test file
-excel_files = list(Path("data").glob("*.xlsx")) or list(Path(".").glob("*.xlsx"))
-chosen_file = random.choice(excel_files)
-df = pd.read_excel(chosen_file).dropna(subset=['ADC_Value'])
-adc = df['ADC_Value'].values.astype(np.float32)
+# 2. Pick a random test file (CSV or XLSX)
+data_dir = Path("data") if Path("data").exists() else Path(".")
+dataset_files = list(data_dir.glob("*.xlsx")) + list(data_dir.glob("*.csv"))
 
-actual_person = df['Person_id'].iloc[0]
-actual_shoe = df['Footwear'].iloc[0]
+if not dataset_files:
+    raise FileNotFoundError("No .xlsx or .csv files found in the dataset directory.")
+
+chosen_file = random.choice(dataset_files)
+
+# Dynamically read based on extension and handle format differences
+if chosen_file.suffix.lower() == '.xlsx':
+    df = pd.read_excel(chosen_file).dropna(subset=['ADC_Value'])
+    adc = df['ADC_Value'].values.astype(np.float32)
+    actual_person = df['Person_id'].iloc[0]
+    actual_shoe = df['Footwear'].iloc[0]
+elif chosen_file.suffix.lower() == '.csv':
+    # Safely skip '#' metadata and empty rows by finding the actual header row
+    skip_rows = 0
+    with open(chosen_file, 'r', encoding='utf-8', errors='ignore') as f:
+        for i, line in enumerate(f):
+            if 'raw_voltage' in line or 'ADC_Value' in line:
+                skip_rows = i
+                break
+    df = pd.read_csv(chosen_file, skiprows=skip_rows)
+    # Check column naming conventions
+    if 'raw_voltage' in df.columns:
+        df = df.dropna(subset=['raw_voltage'])
+        adc = df['raw_voltage'].values.astype(np.float32)
+    elif 'ADC_Value' in df.columns:
+        df = df.dropna(subset=['ADC_Value'])
+        adc = df['ADC_Value'].values.astype(np.float32)
+    else:
+        # Fallback to 3rd column if naming differs
+        adc = df.iloc[:, 2].dropna().values.astype(np.float32)
+
+    actual_person = df['subject_id'].iloc[0] if 'subject_id' in df.columns else (df['Person_id'].iloc[0] if 'Person_id' in df.columns else "Unknown")
+    actual_shoe = df['footwear_type'].iloc[0] if 'footwear_type' in df.columns else (df['Footwear'].iloc[0] if 'Footwear' in df.columns else "Unknown")
+
 secret_label = f"Person_{actual_person}_{actual_shoe}"
 
 # 3. Peak Detection: Anchor the window around a real footstep impact
@@ -92,4 +122,4 @@ print(f"Confidence:       {confidence:.2f}%")
 print("-" * 48)
 input("Press [Enter] to reveal the actual label...")
 print(f"Actual Label:     {secret_label} ({chosen_file.name})")
-print("=" * 48 + "\n")
+print("=" * 48 + "\n"))
